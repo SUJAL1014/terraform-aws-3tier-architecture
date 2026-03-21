@@ -16,11 +16,10 @@ variable "vpc_id" {
 variable "app_port" {
   description = "Port Node.js listens on — ALB forwards to this port"
   type        = number
-  default     = 4000
 }
 
 variable "db_port" {
   description = "PostgreSQL port — only EC2 can reach RDS on this"
   type        = number
-  default     = 5432
+
 }

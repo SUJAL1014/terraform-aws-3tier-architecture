@@ -27,7 +27,42 @@ variable "app_port" {
   type        = number
 }
 
+variable "db_instance_class" {
+  type    = string
+  default = "db.t3.micro"
+}
+
+variable "db_name" {
+  type    = string
+  default = "taskdb"
+}
+
+variable "db_username" {
+  type      = string
+  default   = "dbadmin"
+  sensitive = true
+}
+
+variable "db_password" {
+  description = "Set via: export TF_VAR_db_password=yourpassword"
+  type        = string
+  sensitive   = true
+}
+
 variable "db_port" {
-  description = "PostgreSQL port"
-  type        = number
+  type    = number
+  default = 5432
+}
+
+# ── NEW: db behaviour per environment ────────────────────────
+variable "multi_az" {
+  description = "false for dev (save cost), true for staging/prod"
+  type        = bool
+  default     = false
+}
+
+variable "deletion_protection" {
+  description = "false for dev/staging, true for prod"
+  type        = bool
+  default     = false
 }
