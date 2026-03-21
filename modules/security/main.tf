@@ -46,7 +46,7 @@ resource "aws_security_group" "sg-app" {
     from_port       = var.app_port
     to_port         = var.app_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
+    security_groups = [aws_security_group.sg-alb.id]
   }
 
   # Allow all outbound — EC2 needs to reach RDS and Secrets Manager
@@ -73,7 +73,7 @@ resource "aws_security_group" "sg-db" {
     from_port       = var.db_port
     to_port         = var.db_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.app.id]
+    security_groups = [aws_security_group.sg-app.id]
   }
 
   egress {
