@@ -1,7 +1,6 @@
 variable "aws_region" {
   description = "AWS region to deploy into"
   type        = string
-  default     = "ap-south-1"
 }
 
 variable "project" {
@@ -29,7 +28,6 @@ variable "app_port" {
 
 variable "db_instance_class" {
   type    = string
-  default = "db.t3.micro"
 }
 
 variable "db_name" {
@@ -51,7 +49,7 @@ variable "db_password" {
 
 variable "db_port" {
   type    = number
-  default = 5432
+
 }
 
 # ── NEW: db behaviour per environment ────────────────────────
@@ -108,9 +106,6 @@ variable "price_class" {
   description = "CloudFront price class"
   type        = string
   default     = "PriceClass_100"
-  # PriceClass_100 → US, Canada, Europe (cheapest)
-  # PriceClass_200 → + Asia, Middle East
-  # PriceClass_All → worldwide
 }
 
 variable "default_ttl" {
