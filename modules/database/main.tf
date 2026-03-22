@@ -15,7 +15,7 @@ resource "aws_secretsmanager_secret" "db" {
 
   # Keep secret for 7 days after deletion before permanent removal
   # Gives you time to recover if deleted accidentally
-  recovery_window_in_days = 7
+  recovery_window_in_days = 0
 
   tags = { Name = "${var.project}-${var.environment}-db-secret" }
 }
@@ -55,14 +55,14 @@ resource "aws_db_instance" "main" {
 
   # Engine
   engine         = "postgres"
-  engine_version = "15.4"
+  engine_version = "16.9"
 
   # Size and storage
   instance_class        = var.db_instance_class
   allocated_storage     = 20
-  max_allocated_storage = 100   # auto-scale storage up to 100GB
-  storage_type          = "gp3"
-  storage_encrypted     = true  # always encrypt at rest
+  max_allocated_storage = 20   # auto-scale storage up to 100GB
+  storage_type          = "gp2"
+  storage_encrypted     = false  # always encrypt at rest
 
   # Credentials
   db_name  = var.db_name
@@ -80,13 +80,13 @@ resource "aws_db_instance" "main" {
   multi_az = var.multi_az
 
   # Backups
-  backup_retention_period = 7             # keep 7 days of backups
+  backup_retention_period = 0             # keep 7 days of backups
   backup_window           = "03:00-04:00" # take backup at 3am UTC
   maintenance_window      = "sun:04:00-sun:05:00"
 
   # Deletion safety
   deletion_protection       = var.deletion_protection
-  skip_final_snapshot       = false
+  skip_final_snapshot       = true
   final_snapshot_identifier = "${var.project}-${var.environment}-final-snapshot"
 
   tags = { Name = "${var.project}-${var.environment}-rds" }
