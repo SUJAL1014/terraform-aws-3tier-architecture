@@ -118,43 +118,200 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# ── 5. Launch Template ────────────────────────────────────────
-# Defines exactly what every new EC2 instance looks like
-# ASG uses this template when scaling out
 resource "aws_launch_template" "app" {
   name_prefix   = "${var.project}-${var.environment}-lt-"
   image_id      = data.aws_ami.amazon_linux.id
   instance_type = var.instance_type
 
-  # Attach IAM role so EC2 can call AWS APIs
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2.name
   }
 
-  # Place in private subnet, no public IP
   network_interfaces {
     associate_public_ip_address = false
     security_groups             = [var.sg_app_id]
   }
 
-  # userdata.sh runs once on first boot
-  # templatefile() replaces ${var_name} placeholders in the script
-  user_data = base64encode(templatefile("${path.module}/userdata.sh", {
-    app_port      = var.app_port
-    db_host       = var.db_host
-    db_name       = var.db_name
-    db_username   = var.db_username
-    db_secret_arn = var.db_secret_arn
-    aws_region    = var.aws_region
-  }))
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    set -euxo pipefail
+
+    # ── Step 1: Install system dependencies ──────────────────
+    yum update -y
+    yum install -y jq
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+    yum install -y nodejs
+
+    # ── Step 2: Fetch DB password from Secrets Manager ───────
+    # Terraform injects db_secret_arn and aws_region below
+    SECRET_JSON=$(aws secretsmanager get-secret-value \
+      --secret-id "${var.db_secret_arn}" \
+      --region "${var.aws_region}" \
+      --query SecretString \
+      --output text)
+
+    DB_PASSWORD=$(echo "$SECRET_JSON" | jq -r '.password')
+
+    # ── Step 3: Write environment file ───────────────────────
+    # Terraform injects all  values at plan time
+    # Bash reads them at runtime from /etc/app.env
+    cat > /etc/app.env <<APPENV
+    PORT=${var.app_port}
+    NODE_ENV=production
+    DB_HOST=${var.db_host}
+    DB_PORT=5432
+    DB_NAME=${var.db_name}
+    DB_USER=${var.db_username}
+    DB_PASSWORD=$DB_PASSWORD
+    APPENV
+    chmod 600 /etc/app.env
+
+    # ── Step 4: Write Node.js app ─────────────────────────────
+    mkdir -p /opt/app
+
+    cat > /opt/app/package.json <<PKG
+    {
+      "name": "taskflow-api",
+      "version": "1.0.0",
+      "dependencies": {
+        "express": "^4.18.2",
+        "pg": "^8.11.3",
+        "cors": "^2.8.5"
+      }
+    }
+    PKG
+
+    cat > /opt/app/index.js <<APPJS
+    const express = require('express');
+    const { Pool } = require('pg');
+    const cors    = require('cors');
+
+    const app  = express();
+    const port = process.env.PORT || 4000;
+
+    app.use(cors());
+    app.use(express.json());
+
+    const pool = new Pool({
+      host:     process.env.DB_HOST,
+      port:     parseInt(process.env.DB_PORT),
+      database: process.env.DB_NAME,
+      user:     process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      ssl:      { rejectUnauthorized: false },
+    });
+
+    app.get('/health', async (req, res) => {
+      try {
+        await pool.query('SELECT 1');
+        res.json({ status: 'ok', db: 'connected' });
+      } catch (err) {
+        res.status(503).json({ status: 'error', db: 'disconnected' });
+      }
+    });
+
+    app.get('/api/tasks', async (req, res) => {
+      try {
+        const { rows } = await pool.query(
+          'SELECT * FROM tasks ORDER BY created_at DESC'
+        );
+        res.json(rows);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.post('/api/tasks', async (req, res) => {
+      try {
+        const { title, description = '', status = 'todo', priority = 'medium' } = req.body;
+        if (!title) return res.status(400).json({ error: 'Title required' });
+        const { rows } = await pool.query(
+          'INSERT INTO tasks (title, description, status, priority) VALUES (\$1,\$2,\$3,\$4) RETURNING *',
+          [title, description, status, priority]
+        );
+        res.status(201).json(rows[0]);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.patch('/api/tasks/:id', async (req, res) => {
+      try {
+        const fields  = ['title', 'description', 'status', 'priority'];
+        const updates = [];
+        const values  = [];
+        let idx = 1;
+        for (const f of fields) {
+          if (req.body[f] !== undefined) {
+            updates.push(f + ' = \$' + idx++);
+            values.push(req.body[f]);
+          }
+        }
+        if (!updates.length) return res.status(400).json({ error: 'No fields' });
+        values.push(req.params.id);
+        const { rows } = await pool.query(
+          'UPDATE tasks SET ' + updates.join(', ') + ' WHERE id = \$' + idx + ' RETURNING *',
+          values
+        );
+        if (!rows.length) return res.status(404).json({ error: 'Not found' });
+        res.json(rows[0]);
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.delete('/api/tasks/:id', async (req, res) => {
+      try {
+        const { rows } = await pool.query(
+          'DELETE FROM tasks WHERE id = \$1 RETURNING id',
+          [req.params.id]
+        );
+        if (!rows.length) return res.status(404).json({ error: 'Not found' });
+        res.json({ deleted: rows[0].id });
+      } catch (err) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
+    app.listen(port, () => console.log('TaskFlow API running on port ' + port));
+    APPJS
+
+    # ── Step 5: Install npm packages ─────────────────────────
+    cd /opt/app && npm install --production
+
+    # ── Step 6: Create systemd service ───────────────────────
+    cat > /etc/systemd/system/app.service <<SVC
+    [Unit]
+    Description=TaskFlow Node.js API
+    After=network.target
+
+    [Service]
+    EnvironmentFile=/etc/app.env
+    ExecStart=/usr/bin/node /opt/app/index.js
+    Restart=always
+    RestartSec=5
+    User=nobody
+    WorkingDirectory=/opt/app
+    StandardOutput=journal
+    StandardError=journal
+
+    [Install]
+    WantedBy=multi-user.target
+    SVC
+
+    systemctl daemon-reload
+    systemctl enable app
+    systemctl start app
+
+    echo "TaskFlow API started successfully"
+  EOF
+  )
 
   tag_specifications {
     resource_type = "instance"
     tags          = { Name = "${var.project}-${var.environment}-app" }
   }
 
-  # Create new template before destroying old one
-  # Prevents downtime during updates
   lifecycle {
     create_before_destroy = true
   }
