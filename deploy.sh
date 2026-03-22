@@ -1,9 +1,4 @@
-#!/bin/bash
-# ============================================================
-# deploy.sh — Full automated deployment script
-# Usage: ./deploy.sh [dev|staging|prod]
-# Example: ./deploy.sh dev
-# ============================================================
+
 set -e
 
 # ── Colors ────────────────────────────────────────────────────

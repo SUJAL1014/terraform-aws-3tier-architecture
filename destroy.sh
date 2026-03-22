@@ -1,9 +1,4 @@
-#!/bin/bash
-# ============================================================
-# destroy.sh — Destroy all resources after presentation
-# Usage: ./destroy.sh [dev|staging|prod]
-# Example: ./destroy.sh dev
-# ============================================================
+
 set -e
 
 RED='\033[0;31m'
