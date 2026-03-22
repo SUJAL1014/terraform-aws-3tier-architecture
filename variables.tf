@@ -66,3 +66,55 @@ variable "deletion_protection" {
   type        = bool
   default     = false
 }
+
+variable "cpu_scale_out_threshold" {
+  description = "CPU % that triggers adding an EC2 instance"
+  type        = number
+  default     = 70
+}
+
+variable "cpu_scale_in_threshold" {
+  description = "CPU % that triggers removing an EC2 instance"
+  type        = number
+  default     = 30
+}
+
+
+variable "instance_type" {
+  description = "EC2 instance type for Node.js app"
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "asg_min" {
+  description = "Minimum number of EC2 instances"
+  type        = number
+  default     = 1
+}
+
+variable "asg_max" {
+  description = "Maximum number of EC2 instances"
+  type        = number
+  default     = 4
+}
+
+variable "asg_desired" {
+  description = "Desired number of EC2 instances at launch"
+  type        = number
+  default     = 1
+}
+
+variable "price_class" {
+  description = "CloudFront price class"
+  type        = string
+  default     = "PriceClass_100"
+  # PriceClass_100 → US, Canada, Europe (cheapest)
+  # PriceClass_200 → + Asia, Middle East
+  # PriceClass_All → worldwide
+}
+
+variable "default_ttl" {
+  description = "CloudFront default cache TTL in seconds"
+  type        = number
+  default     = 86400  # 1 day
+}
